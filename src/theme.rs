@@ -1,23 +1,26 @@
 use ratatui::style::Color;
 
+/// A swappable color palette. Roles are named so the renderer never mentions a
+/// literal color — switching the whole look is a one-line change of theme.
 pub struct Theme {
-    wall: Color,
-    floor: Color,
-    outside: Color,
-    player: Color,
-    key: Color,
-    door: Color,
+    pub wall: Color,
+    pub floor: Color,
+    pub outside: Color,
+    pub player: Color,
+    pub key: Color,
+    pub door: Color,
 }
 
-impl Theme {
-    pub fn default() -> Self {
+impl Default for Theme {
+    fn default() -> Self {
+        // A green "hacker terminal" palette.
         Self {
-            wall: Color::Green,
-            floor: Color::Black,
+            wall: Color::Rgb(0, 180, 0),
+            floor: Color::Rgb(10, 30, 10),
             outside: Color::Black,
-            player: Color::Green,
-            key: Color::Green,
-            door: Color::White,
+            player: Color::Rgb(0, 255, 0),
+            key: Color::Rgb(180, 255, 120),
+            door: Color::Rgb(120, 120, 120),
         }
     }
 }

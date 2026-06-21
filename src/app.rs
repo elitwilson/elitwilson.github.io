@@ -1,9 +1,11 @@
-use crate::{map::{self, demo_castle}, theme::Theme};
+use crate::map::{Map, demo_castle};
+use crate::render;
+use crate::theme::Theme;
+use crossterm::event::{self, Event, KeyCode, KeyEventKind};
 use ratatui::DefaultTerminal;
-use crate::render::ui;
 
 pub struct App {
-    map: map::Map,
+    map: Map,
     player_pos: (u16, u16), // x, y position on the map.
     key_pos: (u16, u16),    // where the key sits on the map.
     door_pos: (u16, u16),   // where the door sits on the map.
@@ -13,13 +15,35 @@ pub struct App {
     theme: Theme,
 }
 
+#[derive(Debug, PartialEq, Eq)]
 pub enum Action {
     MoveUp,
     MoveDown,
     MoveLeft,
     MoveRight,
     ToggleAbout,
-    // etc.
+}
+
+/// What a keypress resolves to: either drive the game, or quit.
+#[derive(Debug, PartialEq, Eq)]
+pub enum Command {
+    Game(Action),
+    Quit,
+}
+
+/// Pure mapping from a key to a command. No IO — this is the testable seam
+/// between the event loop and the game.
+pub fn map_key(code: KeyCode) -> Option<Command> {
+    let command = match code {
+        KeyCode::Up | KeyCode::Char('w') => Command::Game(Action::MoveUp),
+        KeyCode::Down | KeyCode::Char('s') => Command::Game(Action::MoveDown),
+        KeyCode::Left | KeyCode::Char('a') => Command::Game(Action::MoveLeft),
+        KeyCode::Right | KeyCode::Char('d') => Command::Game(Action::MoveRight),
+        KeyCode::Char('i') => Command::Game(Action::ToggleAbout),
+        KeyCode::Char('q') | KeyCode::Esc => Command::Quit,
+        _ => return None,
+    };
+    Some(command)
 }
 
 impl App {
@@ -81,13 +105,53 @@ impl App {
             self.show_about = true; // reaching the door with the key is the win
         }
     }
+
+    // --- Read surface ---
+    //
+    // The renderer lives in a different module, so Rust's privacy rules hide
+    // App's fields from it. Rather than make the fields `pub` (which would also
+    // let outside code *mutate* them and would leak our internal representation),
+    // we expose read-only accessors: `Copy` state is returned by value, heavier
+    // state (`Map`, `Theme`) by shared reference. The renderer can observe game
+    // state but cannot change it — only `update`/`try_move` mutate, which keeps
+    // every state transition in one place.
+    pub fn map(&self) -> &Map {
+        &self.map
+    }
+    pub fn theme(&self) -> &Theme {
+        &self.theme
+    }
+    pub fn player_pos(&self) -> (u16, u16) {
+        self.player_pos
+    }
+    pub fn key_pos(&self) -> (u16, u16) {
+        self.key_pos
+    }
+    pub fn door_pos(&self) -> (u16, u16) {
+        self.door_pos
+    }
+    pub fn has_key(&self) -> bool {
+        self.has_key
+    }
+    pub fn show_about(&self) -> bool {
+        self.show_about
+    }
 }
 
 pub fn app(terminal: &mut DefaultTerminal) -> std::io::Result<()> {
+    let mut app = App::new();
     loop {
-        terminal.draw(ui)?;
-        if crossterm::event::read()?.is_key_press() {
-            break Ok(());
+        terminal.draw(|frame| render::ui(frame, &app))?;
+
+        if let Event::Key(key) = event::read()? {
+            if key.kind != KeyEventKind::Press {
+                continue;
+            }
+            match map_key(key.code) {
+                Some(Command::Quit) => break Ok(()),
+                Some(Command::Game(action)) => app.update(action),
+                None => {}
+            }
         }
     }
 }
@@ -112,6 +176,44 @@ mod tests {
     // Movement tests don't care about the key, so park it out of the way.
     fn app_at(pos: (u16, u16)) -> App {
         app_with(pos, (4, 4))
+    }
+
+    // --- input mapping (pure key -> command) ---
+
+    #[test]
+    fn arrow_keys_map_to_movement() {
+        assert_eq!(map_key(KeyCode::Up), Some(Command::Game(Action::MoveUp)));
+        assert_eq!(map_key(KeyCode::Down), Some(Command::Game(Action::MoveDown)));
+        assert_eq!(map_key(KeyCode::Left), Some(Command::Game(Action::MoveLeft)));
+        assert_eq!(map_key(KeyCode::Right), Some(Command::Game(Action::MoveRight)));
+    }
+
+    #[test]
+    fn wasd_keys_map_to_movement() {
+        assert_eq!(map_key(KeyCode::Char('w')), Some(Command::Game(Action::MoveUp)));
+        assert_eq!(map_key(KeyCode::Char('s')), Some(Command::Game(Action::MoveDown)));
+        assert_eq!(map_key(KeyCode::Char('a')), Some(Command::Game(Action::MoveLeft)));
+        assert_eq!(map_key(KeyCode::Char('d')), Some(Command::Game(Action::MoveRight)));
+    }
+
+    #[test]
+    fn i_toggles_about() {
+        assert_eq!(
+            map_key(KeyCode::Char('i')),
+            Some(Command::Game(Action::ToggleAbout))
+        );
+    }
+
+    #[test]
+    fn q_and_esc_quit() {
+        assert_eq!(map_key(KeyCode::Char('q')), Some(Command::Quit));
+        assert_eq!(map_key(KeyCode::Esc), Some(Command::Quit));
+    }
+
+    #[test]
+    fn unmapped_keys_do_nothing() {
+        assert_eq!(map_key(KeyCode::Char('z')), None);
+        assert_eq!(map_key(KeyCode::Enter), None);
     }
 
     // Builder for door tests: place the door and choose whether we hold the key.

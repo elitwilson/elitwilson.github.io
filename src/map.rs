@@ -23,6 +23,20 @@ impl Map {
         }
     }
 
+    pub fn width(&self) -> u16 {
+        self.width as u16
+    }
+
+    pub fn height(&self) -> u16 {
+        self.height as u16
+    }
+
+    /// The tile at (x, y). Callers must stay in bounds (the renderer iterates
+    /// over width/height, so it always is).
+    pub fn tile(&self, x: u16, y: u16) -> Tile {
+        self.tiles[y as usize][x as usize]
+    }
+
     pub fn walkable(&self, x: i32, y: i32) -> bool {
         // Any coordinate off the grid — negative or too large — is not walkable.
         // Guarding here also keeps the index below from panicking.

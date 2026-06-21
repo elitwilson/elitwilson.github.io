@@ -1,5 +1,3 @@
-use ratatui::DefaultTerminal;
-
 mod app;
 mod render;
 mod theme;
