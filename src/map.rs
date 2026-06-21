@@ -23,9 +23,10 @@ impl Map {
         }
     }
 
-    pub fn walkable(&self, x: u16, y: u16) -> bool {
-        // Guard the bounds first, or the index below would panic.
-        if x >= self.width as u16 || y >= self.height as u16 {
+    pub fn walkable(&self, x: i32, y: i32) -> bool {
+        // Any coordinate off the grid — negative or too large — is not walkable.
+        // Guarding here also keeps the index below from panicking.
+        if x < 0 || y < 0 || x >= self.width as i32 || y >= self.height as i32 {
             return false;
         }
         matches!(self.tiles[y as usize][x as usize], Tile::Floor)
@@ -97,5 +98,12 @@ mod tests {
         // e.g. an x or y >= the map's dimensions
         let can_walk = test_map().walkable(10, 10);
         assert!(!can_walk);
+    }
+
+    // Negative coordinates are off the grid too (moving left/up past the edge).
+    #[test]
+    fn negative_coords_are_not_walkable() {
+        assert!(!test_map().walkable(-1, 0));
+        assert!(!test_map().walkable(0, -1));
     }
 }
