@@ -1,4 +1,6 @@
-use crate::map::{Map, demo_castle};
+use crate::map::{Map, castle};
+#[cfg(test)]
+use crate::map::demo_castle;
 use crate::render;
 use crate::theme::Theme;
 use crossterm::event::{self, Event, KeyCode, KeyEventKind};
@@ -49,10 +51,10 @@ pub fn map_key(code: KeyCode) -> Option<Command> {
 impl App {
     pub fn new() -> Self {
         Self {
-            map: demo_castle(),
-            player_pos: (3, 4), // bottom-middle of the interior floor
-            key_pos: (2, 3),    // left side, like the original game
-            door_pos: (3, 2),   // top-middle, the way out
+            map: castle(),
+            player_pos: (10, 8), // just inside the bottom entrance
+            key_pos: (3, 4),     // left side, like the original game
+            door_pos: (10, 9),   // the gated doorway at the bottom
             has_key: false,
             door_open: false,
             show_about: false,
@@ -233,7 +235,7 @@ mod tests {
     #[test]
     fn app_initial_state() {
         let app = App::new();
-        assert_eq!(app.player_pos, (3, 4));
+        assert_eq!(app.player_pos, (10, 8));
         assert!(!app.has_key);
         assert!(!app.door_open);
         assert!(!app.show_about);
