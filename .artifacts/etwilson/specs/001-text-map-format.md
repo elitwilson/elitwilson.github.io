@@ -1,7 +1,7 @@
 ---
 number: 001
 story: null   # ad-hoc spec — drafted directly, not decomposed from a story
-status: ready
+status: complete
 base_branch: map-and-walkable
 depends_on: []
 scope_files:
