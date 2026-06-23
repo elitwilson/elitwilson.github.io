@@ -1,7 +1,7 @@
 ---
 number: 008
 story: null   # ad-hoc spec — intro menu, not decomposed from a story
-status: ready
+status: complete
 base_branch: main
 depends_on: []
 scope_files:
