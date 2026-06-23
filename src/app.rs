@@ -1,16 +1,17 @@
-// The game is temporarily parked while the sandbox runs. Suppress dead_code
-// warnings here — restore the game by swapping sandbox::sandbox → app::app
-// in main.rs. All items below remain intact and compile.
-#![allow(dead_code)]
-
 use crate::map::Map;
 #[cfg(test)]
 use crate::map::demo_castle;
 use crate::render;
 use crate::theme::Theme;
+use crate::victory::VictoryFireworks;
 use crossterm::event::{self, Event, KeyCode, KeyEventKind};
 use ratatui::DefaultTerminal;
+use ratatui::layout::Rect;
 use std::time::{Duration, Instant};
+
+/// Fixed seed for the victory fireworks — reproducible run-to-run, still varied
+/// across the burst sequence.
+const VICTORY_SEED: u64 = 0xfeed_f1a5;
 
 pub(crate) const FRAME_TIME: Duration = Duration::from_millis(16);
 
@@ -34,10 +35,12 @@ pub enum Action {
     ToggleAbout,
 }
 
-/// What a keypress resolves to: either drive the game, or quit.
+/// What a keypress resolves to: drive the game, switch to the particle sandbox,
+/// or quit.
 #[derive(Debug, PartialEq, Eq)]
 pub enum Command {
     Game(Action),
+    Switch,
     Quit,
 }
 
@@ -50,6 +53,7 @@ pub fn map_key(code: KeyCode) -> Option<Command> {
         KeyCode::Left | KeyCode::Char('a') => Command::Game(Action::MoveLeft),
         KeyCode::Right | KeyCode::Char('d') => Command::Game(Action::MoveRight),
         KeyCode::Char('i') => Command::Game(Action::ToggleAbout),
+        KeyCode::Char('p') => Command::Switch,
         KeyCode::Char('q') | KeyCode::Esc => Command::Quit,
         _ => return None,
     };
@@ -154,17 +158,30 @@ impl App {
         self.show_about
     }
 
+    /// Whether the player has won — reached the door while holding the key. Drives
+    /// the victory celebration. Distinct from `show_about`, which the `i` key also
+    /// toggles for the plain About page.
+    pub fn won(&self) -> bool {
+        self.door_open
+    }
+
     /// Per-frame hook called once per loop iteration with the real elapsed
     /// time since the last frame. No-op today; the seam exists so future
     /// time-based animation has somewhere to live.
     pub fn tick(&mut self, _dt: Duration) {}
 }
 
-pub fn app(terminal: &mut DefaultTerminal) -> std::io::Result<()> {
+pub fn app(terminal: &mut DefaultTerminal) -> std::io::Result<crate::ScreenExit> {
     let mut app = App::new();
+    let mut fireworks = VictoryFireworks::new(VICTORY_SEED);
     let mut last = Instant::now();
     loop {
-        terminal.draw(|frame| render::ui(frame, &app))?;
+        // Capture the body Rect from the draw closure so the fireworks can spawn
+        // within it after the draw returns (it owns the random burst positions).
+        let mut body: Option<Rect> = None;
+        terminal.draw(|frame| {
+            body = Some(render::ui(frame, &app, fireworks.particles()));
+        })?;
 
         let now = Instant::now();
         let dt = now - last;
@@ -175,10 +192,18 @@ pub fn app(terminal: &mut DefaultTerminal) -> std::io::Result<()> {
             && key.kind == KeyEventKind::Press
         {
             match map_key(key.code) {
-                Some(Command::Quit) => return Ok(()),
+                Some(Command::Quit) => return Ok(crate::ScreenExit::Quit),
+                Some(Command::Switch) => return Ok(crate::ScreenExit::Switch),
                 Some(Command::Game(action)) => app.update(action),
                 None => {}
             }
+        }
+
+        // The celebration runs only after the win, animating behind the modal.
+        if app.won()
+            && let Some(body) = body
+        {
+            fireworks.tick(dt, body);
         }
 
         app.tick(dt);
@@ -258,6 +283,11 @@ mod tests {
     fn q_and_esc_quit() {
         assert_eq!(map_key(KeyCode::Char('q')), Some(Command::Quit));
         assert_eq!(map_key(KeyCode::Esc), Some(Command::Quit));
+    }
+
+    #[test]
+    fn p_switches_to_sandbox() {
+        assert_eq!(map_key(KeyCode::Char('p')), Some(Command::Switch));
     }
 
     #[test]

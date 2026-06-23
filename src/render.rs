@@ -1,5 +1,7 @@
 use crate::app::App;
 use crate::map::Tile;
+use crate::particle_render::draw_particles;
+use crate::particles::ParticleSystem;
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Flex, Layout, Rect};
 use ratatui::style::Color;
@@ -10,14 +12,16 @@ use ratatui::widgets::{Block, Clear, Paragraph};
 /// since terminal cells are about twice as tall as they are wide.
 const TILE_W: u16 = 2;
 
-pub fn ui(frame: &mut Frame, app: &App) {
+/// Render the game and return the body `Rect` (the area below the title), which
+/// the caller uses to place the victory fireworks.
+pub fn ui(frame: &mut Frame, app: &App, particles: &ParticleSystem) -> Rect {
     let [title_area, body] =
         Layout::vertical([Constraint::Length(1), Constraint::Min(0)]).areas(frame.area());
 
     let hint = if app.has_key() {
-        "You have the key — reach the door!   (WASD/arrows · i: about · q: quit)"
+        "You have the key — reach the door!   (WASD/arrows · i: about · p: particles · q: quit)"
     } else {
-        "Find the key, then open the door.   (WASD/arrows · i: about · q: quit)"
+        "Find the key, then open the door.   (WASD/arrows · i: about · p: particles · q: quit)"
     };
     frame.render_widget(Line::from(hint).centered(), title_area);
 
@@ -47,9 +51,16 @@ pub fn ui(frame: &mut Frame, app: &App) {
     let (px, py) = app.player_pos();
     fill_tile(frame, ox, oy, px, py, theme.player);
 
+    // Victory fireworks sit above the scene but below the modal. Drawn last so
+    // they overlay the castle; `render_about` then clears its own rect on top,
+    // so the bursts read as being *behind* the modal.
+    draw_particles(particles, frame.buffer_mut(), body, (body.x, body.y));
+
     if app.show_about() {
-        render_about(frame, body);
+        render_modal(frame, body, app.won());
     }
+
+    body
 }
 
 /// Paint a single map tile (TILE_W cells wide) with a background color.
@@ -65,12 +76,18 @@ fn fill_tile(frame: &mut Frame, ox: u16, oy: u16, tx: u16, ty: u16, color: Color
     }
 }
 
-/// Centered modal painted over the game.
-fn render_about(frame: &mut Frame, area: Rect) {
+/// Centered modal painted over the game. On a win it's the victory banner;
+/// otherwise it's the plain About page (toggled with `i`).
+fn render_modal(frame: &mut Frame, area: Rect, won: bool) {
     let modal = centered_rect(area, 40, 12);
     frame.render_widget(Clear, modal); // wipe whatever's underneath
-    let block = Block::bordered().title("About");
-    frame.render_widget(Paragraph::new("about page").centered().block(block), modal);
+    let (title, text) = if won {
+        ("Victory", "You won!")
+    } else {
+        ("About", "about page")
+    };
+    let block = Block::bordered().title(title);
+    frame.render_widget(Paragraph::new(text).centered().block(block), modal);
 }
 
 fn centered_rect(area: Rect, width: u16, height: u16) -> Rect {

@@ -30,6 +30,7 @@ pub enum SandboxCommand {
     Quit,
     CycleEffect,
     ToggleConfig,
+    Switch,
     Ignore,
 }
 
@@ -39,6 +40,7 @@ pub fn map_sandbox_key(code: KeyCode) -> SandboxCommand {
         KeyCode::Esc | KeyCode::Char('q') => SandboxCommand::Quit,
         KeyCode::Tab => SandboxCommand::CycleEffect,
         KeyCode::Char('c') => SandboxCommand::ToggleConfig,
+        KeyCode::Char('p') => SandboxCommand::Switch,
         _ => SandboxCommand::Ignore,
     }
 }
@@ -196,11 +198,12 @@ fn field_value(config: &SandboxConfig, field: ConfigField) -> String {
 ///
 /// Owns its own `ParticleSystem` and a seeded `Rng`. Auto-spawns fireworks at
 /// the screen center on a recurring cadence. Tab cycles the selected effect
-/// kind. Esc/q exits cleanly.
+/// kind. `p` returns to the game; Esc/q quits the app — both disable mouse
+/// capture on the way out.
 ///
-/// Same signature as `app::app` so `ratatui::run` accepts it with a one-line
-/// swap in `main.rs`.
-pub fn sandbox(terminal: &mut DefaultTerminal) -> std::io::Result<()> {
+/// Same signature as `app::app`; the top-level `main::run` driver dispatches
+/// between the two screens based on the returned `ScreenExit`.
+pub fn sandbox(terminal: &mut DefaultTerminal) -> std::io::Result<crate::ScreenExit> {
     let mut system = ParticleSystem::new();
     let mut rng = Rng::new(SANDBOX_SEED);
     let mut config = SandboxConfig::default();
@@ -237,7 +240,7 @@ pub fn sandbox(terminal: &mut DefaultTerminal) -> std::io::Result<()> {
             };
             let panel_hint = if config_open { " c/Esc: close panel " } else { " c: config " };
             let hint = format!(
-                " Sandbox | Effect: {kind_name} | Follows mouse | Tab: cycle | q/Esc: quit |{panel_hint}"
+                " Sandbox | Effect: {kind_name} | Follows mouse | Tab: cycle | p: game | q/Esc: quit |{panel_hint}"
             );
             let title = Paragraph::new(Span::styled(hint, Style::default().fg(Color::Yellow)))
                 .block(Block::default());
@@ -293,7 +296,11 @@ pub fn sandbox(terminal: &mut DefaultTerminal) -> std::io::Result<()> {
                             match map_sandbox_key(key.code) {
                                 SandboxCommand::Quit => {
                                     execute!(stdout(), DisableMouseCapture)?;
-                                    return Ok(());
+                                    return Ok(crate::ScreenExit::Quit);
+                                }
+                                SandboxCommand::Switch => {
+                                    execute!(stdout(), DisableMouseCapture)?;
+                                    return Ok(crate::ScreenExit::Switch);
                                 }
                                 SandboxCommand::CycleEffect => {
                                     kind_idx = next_kind(kind_idx, EFFECT_KINDS.len());
@@ -440,6 +447,11 @@ mod tests {
     #[test]
     fn c_maps_to_toggle_config() {
         assert_eq!(map_sandbox_key(KeyCode::Char('c')), SandboxCommand::ToggleConfig);
+    }
+
+    #[test]
+    fn p_maps_to_switch() {
+        assert_eq!(map_sandbox_key(KeyCode::Char('p')), SandboxCommand::Switch);
     }
 
     // --- map_config_key ---
