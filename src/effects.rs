@@ -5,6 +5,7 @@ use std::time::Duration;
 
 /// Supported effect types. Adding a new effect means adding an arm here
 /// plus a private emit function — the `spawn` call site shape does not change.
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub enum EffectKind {
     Fireworks,
 }
@@ -24,6 +25,7 @@ pub struct FireworksParams {
     pub speed: (f32, f32),
     /// Gravity hint (cells/s²). Stored for future per-effect override; the
     /// physics system (STR-001) owns actual gravity for now.
+    #[allow(dead_code)]
     pub gravity: f32,
     /// Lifetime range `(min, max)` in seconds.
     pub lifetime: (f32, f32),

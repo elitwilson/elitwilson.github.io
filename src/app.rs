@@ -1,3 +1,8 @@
+// The game is temporarily parked while the sandbox runs. Suppress dead_code
+// warnings here — restore the game by swapping sandbox::sandbox → app::app
+// in main.rs. All items below remain intact and compile.
+#![allow(dead_code)]
+
 use crate::map::Map;
 #[cfg(test)]
 use crate::map::demo_castle;
@@ -7,7 +12,7 @@ use crossterm::event::{self, Event, KeyCode, KeyEventKind};
 use ratatui::DefaultTerminal;
 use std::time::{Duration, Instant};
 
-const FRAME_TIME: Duration = Duration::from_millis(16);
+pub(crate) const FRAME_TIME: Duration = Duration::from_millis(16);
 
 pub struct App {
     map: Map,
