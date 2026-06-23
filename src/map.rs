@@ -89,10 +89,15 @@ impl std::str::FromStr for Level {
     type Err = ParseError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        // Strip a trailing newline so files with or without one parse identically.
-        let s = s.trim_end_matches('\n');
-
-        let lines: Vec<&str> = s.split('\n').collect();
+        // Normalize line endings before parsing: strip a trailing newline so
+        // files with or without one parse identically, and drop a trailing '\r'
+        // from each line so CRLF maps (e.g. checked out on Windows) parse the
+        // same as LF ones rather than choking on the carriage return.
+        let lines: Vec<&str> = s
+            .trim_end_matches('\n')
+            .split('\n')
+            .map(|l| l.trim_end_matches('\r'))
+            .collect();
         let width = lines.iter().map(|l| l.len()).max().unwrap_or(0);
 
         let mut player: Option<(u16, u16)> = None;
@@ -288,6 +293,18 @@ mod tests {
     fn unknown_char_returns_error() {
         let result = "@kD\n?".parse::<Level>();
         assert!(matches!(result, Err(ParseError::UnknownChar('?'))));
+    }
+
+    // CRLF maps (e.g. checked out on Windows) parse identically to LF ones: the
+    // trailing '\r' must not be treated as an unknown tile character.
+    #[test]
+    fn crlf_line_endings_parse_like_lf() {
+        let lf: Level = "@kD\n###".parse().unwrap();
+        let crlf: Level = "@kD\r\n###\r\n".parse().unwrap();
+        assert_eq!(crlf.map.width(), lf.map.width());
+        assert_eq!(crlf.map.height(), lf.map.height());
+        assert_eq!(crlf.player, lf.player);
+        assert_eq!(crlf.map.tile(2, 1), Tile::Wall); // no stray '\r' tile past it
     }
 
     // Missing '@' returns MissingEntity("player").

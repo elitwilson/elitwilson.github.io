@@ -1,21 +1,15 @@
-use crate::app::FRAME_TIME;
 use crate::effects::{EffectKind, spawn};
+use crate::input::KeyCode;
 use crate::particle_render::draw_particles;
 use crate::particles::ParticleSystem;
 use crate::rng::Rng;
 use crate::sandbox_config::{ConfigField, FIELDS, SandboxConfig, step};
-use crossterm::event::{
-    self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEventKind,
-};
-use crossterm::execute;
-use ratatui::DefaultTerminal;
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Clear, Paragraph};
-use std::io::stdout;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 /// Fixed seed for the sandbox PRNG — reproducible run-to-run.
 const SANDBOX_SEED: u64 = 0xdeadbeef_cafe1234;
@@ -146,7 +140,12 @@ pub fn draw_config_panel(frame: &mut Frame, config: &SandboxConfig) {
     frame.render_widget(block, panel);
 
     // Inner area: inside the border (1-cell inset on all sides).
-    let inner = Rect::new(panel.x + 1, panel.y + 1, panel.width.saturating_sub(2), panel.height.saturating_sub(2));
+    let inner = Rect::new(
+        panel.x + 1,
+        panel.y + 1,
+        panel.width.saturating_sub(2),
+        panel.height.saturating_sub(2),
+    );
 
     for (i, field) in FIELDS.iter().enumerate() {
         let label = field_label(*field);
@@ -194,152 +193,139 @@ fn field_value(config: &SandboxConfig, field: ConfigField) -> String {
     }
 }
 
-/// Standalone sandbox loop.
+/// The particle sandbox screen.
 ///
-/// Owns its own `ParticleSystem` and a seeded `Rng`. Auto-spawns fireworks at
-/// the screen center on a recurring cadence. Tab cycles the selected effect
-/// kind. `p` returns to the game; Esc/q quits the app — both disable mouse
-/// capture on the way out.
+/// Owns its own `ParticleSystem` and a seeded `Rng`. Auto-spawns fireworks on a
+/// recurring cadence at the mouse position (or body center until the mouse first
+/// moves). Tab cycles the effect kind; `c` toggles the config panel; `p` returns
+/// to the game; Esc/q goes back to the menu.
 ///
-/// Same signature as `app::app`; the top-level `main::run` driver dispatches
-/// between the two screens based on the returned `ScreenExit`.
-pub fn sandbox(terminal: &mut DefaultTerminal) -> std::io::Result<crate::Nav> {
-    let mut system = ParticleSystem::new();
-    let mut rng = Rng::new(SANDBOX_SEED);
-    let mut config = SandboxConfig::default();
+/// Mouse position is fed in via [`set_mouse`](Self::set_mouse) — each runner is
+/// responsible for sourcing it (crossterm mouse capture natively, ratzilla's
+/// `on_mouse_event` on the web).
+pub struct SandboxScreen {
+    system: ParticleSystem,
+    rng: Rng,
+    config: SandboxConfig,
+    kind_idx: usize,
+    spawn_acc: Duration,
+    config_open: bool,
+    last_area: Option<Rect>,
+    last_mouse: Option<(u16, u16)>,
+}
 
-    let mut kind_idx: usize = 0;
-    let mut spawn_acc = Duration::ZERO;
-    let mut config_open = false;
-    let mut last_area: Option<Rect> = None;
-    let mut last_mouse: Option<(u16, u16)> = None;
-    let mut last = Instant::now();
+impl SandboxScreen {
+    pub fn new() -> Self {
+        Self {
+            system: ParticleSystem::new(),
+            rng: Rng::new(SANDBOX_SEED),
+            config: SandboxConfig::default(),
+            kind_idx: 0,
+            spawn_acc: Duration::ZERO,
+            config_open: false,
+            last_area: None,
+            last_mouse: None,
+        }
+    }
 
-    // The sandbox follows the mouse, so opt into mouse events for this run.
-    execute!(stdout(), EnableMouseCapture)?;
+    /// Record the latest cursor cell. Bursts spawn here; mouse-follow continues
+    /// regardless of whether the config panel is open.
+    pub fn set_mouse(&mut self, pos: (u16, u16)) {
+        self.last_mouse = Some(pos);
+    }
 
-    loop {
-        // --- draw ---
-        // Capture the body Rect via a cell outside the closure so we can use it
-        // for spawning after the draw call returns.
-        let mut drawn_body: Option<Rect> = None;
-        terminal.draw(|frame| {
-            let full = frame.area();
-
-            // Split off a 1-row title at the top, mirroring render::ui's layout.
-            let chunks = Layout::default()
-                .direction(Direction::Vertical)
-                .constraints([Constraint::Length(1), Constraint::Min(0)])
-                .split(full);
-
-            let title_area = chunks[0];
-            let body = chunks[1];
-
-            let kind_name = match EFFECT_KINDS[kind_idx] {
-                EffectKind::Fireworks => "Fireworks",
-            };
-            let panel_hint = if config_open { " c/Esc: close panel " } else { " c: config " };
-            let hint = format!(
-                " Sandbox | Effect: {kind_name} | Follows mouse | Tab: cycle | p: game | q/Esc: quit |{panel_hint}"
-            );
-            let title = Paragraph::new(Span::styled(hint, Style::default().fg(Color::Yellow)))
-                .block(Block::default());
-            frame.render_widget(title, title_area);
-
-            // Clear the body with a dark background so particles read clearly.
-            let bg = Block::default().style(Style::default().bg(Color::Black));
-            frame.render_widget(bg, body);
-
-            // Draw live particles. Origin (0,0) is the top-left of the body area;
-            // particle positions are body-relative because center is computed from body.
-            draw_particles(&system, frame.buffer_mut(), body, (body.x, body.y));
-
-            // Overlay the config panel when open — drawn after particles so it
-            // appears on top of the simulation.
-            if config_open {
-                draw_config_panel(frame, &config);
+    pub fn handle_key(&mut self, code: KeyCode) -> Option<crate::Nav> {
+        if self.config_open {
+            // Config panel captures all keys while open.
+            match map_config_key(code) {
+                ConfigCommand::SelectPrev => self.config.select_prev(),
+                ConfigCommand::SelectNext => self.config.select_next(),
+                ConfigCommand::Step(dir) => {
+                    let field = self.config.selected_field();
+                    step(&mut self.config, field, dir);
+                }
+                ConfigCommand::Close => self.config_open = false,
+                ConfigCommand::Ignore => {}
             }
+        } else {
+            match map_sandbox_key(code) {
+                SandboxCommand::Quit => return Some(crate::Nav::To(crate::Screen::Menu)),
+                SandboxCommand::Switch => return Some(crate::Nav::To(crate::Screen::Game)),
+                SandboxCommand::CycleEffect => {
+                    self.kind_idx = next_kind(self.kind_idx, EFFECT_KINDS.len());
+                }
+                SandboxCommand::ToggleConfig => self.config_open = true,
+                SandboxCommand::Ignore => {}
+            }
+        }
+        None
+    }
 
-            drawn_body = Some(body);
-        })?;
+    pub fn render(&mut self, frame: &mut Frame) -> Rect {
+        let full = frame.area();
+
+        // Split off a 1-row title at the top, mirroring render::ui's layout.
+        let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Length(1), Constraint::Min(0)])
+            .split(full);
+
+        let title_area = chunks[0];
+        let body = chunks[1];
+
+        let kind_name = match EFFECT_KINDS[self.kind_idx] {
+            EffectKind::Fireworks => "Fireworks",
+        };
+        let panel_hint = if self.config_open {
+            " c/Esc: close panel "
+        } else {
+            " c: config "
+        };
+        let hint = format!(
+            " Sandbox | Effect: {kind_name} | Follows mouse | Tab: cycle | p: game | q/Esc: quit |{panel_hint}"
+        );
+        let title = Paragraph::new(Span::styled(hint, Style::default().fg(Color::Yellow)))
+            .block(Block::default());
+        frame.render_widget(title, title_area);
+
+        // Clear the body with a dark background so particles read clearly.
+        let bg = Block::default().style(Style::default().bg(Color::Black));
+        frame.render_widget(bg, body);
+
+        // Draw live particles. Origin (0,0) is the top-left of the body area;
+        // particle positions are body-relative because center is computed from body.
+        draw_particles(&self.system, frame.buffer_mut(), body, (body.x, body.y));
+
+        // Overlay the config panel when open — drawn after particles so it
+        // appears on top of the simulation.
+        if self.config_open {
+            draw_config_panel(frame, &self.config);
+        }
 
         // Track the live body area so center is always current after a resize.
-        if let Some(body) = drawn_body {
-            last_area = Some(body);
-        }
+        self.last_area = Some(body);
+        body
+    }
 
-        // --- dt ---
-        let now = Instant::now();
-        let dt = now - last;
-        last = now;
-
-        // --- input ---
-        // Block up to one frame for the first event (this paces the loop), then
-        // drain the rest so rapid mouse motion doesn't lag or back up the queue.
-        if event::poll(FRAME_TIME)? {
-            loop {
-                match event::read()? {
-                    Event::Key(key) if key.kind == KeyEventKind::Press => {
-                        if config_open {
-                            // Config panel captures all keys while open.
-                            match map_config_key(key.code) {
-                                ConfigCommand::SelectPrev => config.select_prev(),
-                                ConfigCommand::SelectNext => config.select_next(),
-                                ConfigCommand::Step(dir) => {
-                                    let field = config.selected_field();
-                                    step(&mut config, field, dir);
-                                }
-                                ConfigCommand::Close => config_open = false,
-                                ConfigCommand::Ignore => {}
-                            }
-                        } else {
-                            match map_sandbox_key(key.code) {
-                                SandboxCommand::Quit => {
-                                    execute!(stdout(), DisableMouseCapture)?;
-                                    return Ok(crate::Nav::To(crate::Screen::Menu));
-                                }
-                                SandboxCommand::Switch => {
-                                    execute!(stdout(), DisableMouseCapture)?;
-                                    return Ok(crate::Nav::To(crate::Screen::Game));
-                                }
-                                SandboxCommand::CycleEffect => {
-                                    kind_idx = next_kind(kind_idx, EFFECT_KINDS.len());
-                                }
-                                SandboxCommand::ToggleConfig => config_open = true,
-                                SandboxCommand::Ignore => {}
-                            }
-                        }
-                    }
-                    // Track the latest cursor cell — bursts spawn here.
-                    // Mouse-follow continues regardless of whether the panel is open.
-                    Event::Mouse(me) => last_mouse = Some((me.column, me.row)),
-                    _ => {}
-                }
-                if !event::poll(Duration::ZERO)? {
-                    break;
-                }
-            }
-        }
-
+    pub fn tick(&mut self, dt: Duration) {
         // --- auto-spawn at the mouse (or center until the mouse first moves) ---
         // Reads live from config so cadence and burst shape update immediately.
-        if let Some(area) = last_area {
-            let (count, remainder) = cadence_step(spawn_acc, dt, config.spawn_interval);
-            spawn_acc = remainder;
-            let origin = spawn_origin(area, last_mouse);
+        if let Some(area) = self.last_area {
+            let (count, remainder) = cadence_step(self.spawn_acc, dt, self.config.spawn_interval);
+            self.spawn_acc = remainder;
+            let origin = spawn_origin(area, self.last_mouse);
             for _ in 0..count {
                 spawn(
-                    EFFECT_KINDS[kind_idx],
+                    EFFECT_KINDS[self.kind_idx],
                     origin,
-                    &config.params,
-                    &mut rng,
-                    &mut system,
+                    &self.config.params,
+                    &mut self.rng,
+                    &mut self.system,
                 );
             }
         }
 
-        // --- tick ---
-        system.tick(dt);
+        self.system.tick(dt);
     }
 }
 
@@ -446,7 +432,10 @@ mod tests {
 
     #[test]
     fn c_maps_to_toggle_config() {
-        assert_eq!(map_sandbox_key(KeyCode::Char('c')), SandboxCommand::ToggleConfig);
+        assert_eq!(
+            map_sandbox_key(KeyCode::Char('c')),
+            SandboxCommand::ToggleConfig
+        );
     }
 
     #[test]

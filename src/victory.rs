@@ -207,6 +207,9 @@ mod tests {
                 bursts += 1;
             }
         }
-        assert!(bursts >= 2, "expected multiple bursts over time, got {bursts}");
+        assert!(
+            bursts >= 2,
+            "expected multiple bursts over time, got {bursts}"
+        );
     }
 }
