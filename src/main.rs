@@ -1,7 +1,9 @@
 mod app;
+mod effects;
 mod map;
 mod particles;
 mod render;
+mod rng;
 mod theme;
 
 fn main() -> color_eyre::Result<()> {
