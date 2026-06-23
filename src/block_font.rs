@@ -216,12 +216,7 @@ fn glyph(c: char) -> [&'static str; HEIGHT] {
             "       ",
         ],
         _ => [
-            "       ",
-            "       ",
-            "       ",
-            "       ",
-            "       ",
-            "       ",
+            "       ", "       ", "       ", "       ", "       ", "       ",
         ],
     }
 }
@@ -352,7 +347,10 @@ mod tests {
         let unknown = compose("!", 1);
         let known_w = known[0].chars().count();
         let unknown_w = unknown[0].chars().count();
-        assert_eq!(known_w, unknown_w, "blank fallback should have same width as a real glyph");
+        assert_eq!(
+            known_w, unknown_w,
+            "blank fallback should have same width as a real glyph"
+        );
     }
 
     #[test]
@@ -415,7 +413,10 @@ mod tests {
                 }
             }
         }
-        assert!(found_shadow, "expected at least one shadow cell at (+1,+1) offset");
+        assert!(
+            found_shadow,
+            "expected at least one shadow cell at (+1,+1) offset"
+        );
     }
 
     #[test]

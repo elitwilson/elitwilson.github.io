@@ -1,5 +1,5 @@
-use crossterm::event::{self, Event, KeyCode, KeyEventKind};
-use ratatui::DefaultTerminal;
+use crate::input::KeyCode;
+use ratatui::Frame;
 use ratatui::layout::Alignment;
 use ratatui::style::{Color, Style};
 use ratatui::text::{Line, Span};
@@ -18,38 +18,39 @@ pub fn map_about_key(code: KeyCode) -> AboutCommand {
     }
 }
 
-pub fn about(terminal: &mut DefaultTerminal) -> std::io::Result<crate::Nav> {
-    loop {
-        terminal.draw(|frame| {
-            let area = frame.area();
-            let text = vec![
-                Line::from(Span::styled(
-                    "About — coming soon",
-                    Style::default().fg(Color::Rgb(0, 200, 0)),
-                )),
-                Line::from(""),
-                Line::from(Span::styled(
-                    "Esc / q  back to menu",
-                    Style::default().fg(Color::DarkGray),
-                )),
-            ];
-            frame.render_widget(
-                Paragraph::new(text)
-                    .alignment(Alignment::Center)
-                    .block(Block::default()),
-                area,
-            );
-        })?;
+/// The About screen carries no state — it's a static page until a key sends it
+/// back to the menu. A unit struct keeps it uniform with the other screens so
+/// the router can drive all four the same way.
+pub struct About;
 
-        if event::poll(std::time::Duration::from_millis(50))?
-            && let Event::Key(key) = event::read()?
-            && key.kind == KeyEventKind::Press
-        {
-            match map_about_key(key.code) {
-                AboutCommand::Back => return Ok(crate::Nav::To(crate::Screen::Menu)),
-                AboutCommand::Ignore => {}
-            }
+impl About {
+    pub fn handle_key(&mut self, code: KeyCode) -> Option<crate::Nav> {
+        match map_about_key(code) {
+            AboutCommand::Back => Some(crate::Nav::To(crate::Screen::Menu)),
+            AboutCommand::Ignore => None,
         }
+    }
+
+    pub fn render(&self, frame: &mut Frame) -> ratatui::layout::Rect {
+        let area = frame.area();
+        let text = vec![
+            Line::from(Span::styled(
+                "About — coming soon",
+                Style::default().fg(Color::Rgb(0, 200, 0)),
+            )),
+            Line::from(""),
+            Line::from(Span::styled(
+                "Esc / q  back to menu",
+                Style::default().fg(Color::DarkGray),
+            )),
+        ];
+        frame.render_widget(
+            Paragraph::new(text)
+                .alignment(Alignment::Center)
+                .block(Block::default()),
+            area,
+        );
+        area
     }
 }
 

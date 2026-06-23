@@ -1,5 +1,4 @@
-use crossterm::event::{self, Event, KeyCode, KeyEventKind};
-use ratatui::DefaultTerminal;
+use crate::input::KeyCode;
 use ratatui::Frame;
 use ratatui::layout::{Alignment, Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
@@ -156,23 +155,25 @@ fn render_menu(frame: &mut Frame, menu: &Menu) {
     );
 }
 
-pub fn menu(terminal: &mut DefaultTerminal) -> std::io::Result<crate::Nav> {
-    let mut state = Menu::new();
-    loop {
-        terminal.draw(|frame| render_menu(frame, &state))?;
-
-        if event::poll(std::time::Duration::from_millis(50))?
-            && let Event::Key(key) = event::read()?
-            && key.kind == KeyEventKind::Press
-        {
-            match map_menu_key(key.code) {
-                MenuCommand::Up => state.up(),
-                MenuCommand::Down => state.down(),
-                MenuCommand::Select => return Ok(activate(state.selected_item())),
-                MenuCommand::Quit => return Ok(crate::Nav::Quit),
-                MenuCommand::Ignore => {}
-            }
+impl Menu {
+    /// Handle a keypress. Returns `Some(Nav)` when the press resolves to a
+    /// navigation (selecting an item or quitting), `None` to stay on the menu.
+    pub fn handle_key(&mut self, code: KeyCode) -> Option<crate::Nav> {
+        match map_menu_key(code) {
+            MenuCommand::Up => self.up(),
+            MenuCommand::Down => self.down(),
+            MenuCommand::Select => return Some(activate(self.selected_item())),
+            MenuCommand::Quit => return Some(crate::Nav::Quit),
+            MenuCommand::Ignore => {}
         }
+        None
+    }
+
+    /// Draw the menu. Returns the full area (the menu has no separate body the
+    /// animation layer cares about).
+    pub fn render(&self, frame: &mut Frame) -> ratatui::layout::Rect {
+        render_menu(frame, self);
+        frame.area()
     }
 }
 
@@ -267,12 +268,18 @@ mod tests {
 
     #[test]
     fn activate_play_goes_to_game() {
-        assert_eq!(activate(MenuItem::Play), crate::Nav::To(crate::Screen::Game));
+        assert_eq!(
+            activate(MenuItem::Play),
+            crate::Nav::To(crate::Screen::Game)
+        );
     }
 
     #[test]
     fn activate_about_goes_to_about() {
-        assert_eq!(activate(MenuItem::About), crate::Nav::To(crate::Screen::About));
+        assert_eq!(
+            activate(MenuItem::About),
+            crate::Nav::To(crate::Screen::About)
+        );
     }
 
     #[test]

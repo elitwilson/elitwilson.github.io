@@ -1,18 +1,21 @@
+use crate::input::KeyCode;
 use crate::map::Map;
 #[cfg(test)]
 use crate::map::demo_castle;
 use crate::render;
 use crate::theme::Theme;
 use crate::victory::VictoryFireworks;
-use crossterm::event::{self, Event, KeyCode, KeyEventKind};
-use ratatui::DefaultTerminal;
+use ratatui::Frame;
 use ratatui::layout::Rect;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 /// Fixed seed for the victory fireworks — reproducible run-to-run, still varied
 /// across the burst sequence.
 const VICTORY_SEED: u64 = 0xfeed_f1a5;
 
+// Only the native runner paces itself with a poll timeout; the web runner is
+// driven by requestAnimationFrame.
+#[cfg(not(target_arch = "wasm32"))]
 pub(crate) const FRAME_TIME: Duration = Duration::from_millis(16);
 
 pub struct App {
@@ -171,42 +174,49 @@ impl App {
     pub fn tick(&mut self, _dt: Duration) {}
 }
 
-pub fn app(terminal: &mut DefaultTerminal) -> std::io::Result<crate::Nav> {
-    let mut app = App::new();
-    let mut fireworks = VictoryFireworks::new(VICTORY_SEED);
-    let mut last = Instant::now();
-    loop {
-        // Capture the body Rect from the draw closure so the fireworks can spawn
-        // within it after the draw returns (it owns the random burst positions).
-        let mut body: Option<Rect> = None;
-        terminal.draw(|frame| {
-            body = Some(render::ui(frame, &app, fireworks.particles()));
-        })?;
+/// The playable game screen: the puzzle state plus its victory celebration.
+///
+/// Holds the body `Rect` from the most recent render so `tick` can spawn the
+/// fireworks within it — the burst origin is only known once layout has run.
+pub struct GameScreen {
+    app: App,
+    fireworks: VictoryFireworks,
+    last_body: Option<Rect>,
+}
 
-        let now = Instant::now();
-        let dt = now - last;
-        last = now;
-
-        if event::poll(FRAME_TIME)?
-            && let Event::Key(key) = event::read()?
-            && key.kind == KeyEventKind::Press
-        {
-            match map_key(key.code) {
-                Some(Command::Quit) => return Ok(crate::Nav::To(crate::Screen::Menu)),
-                Some(Command::Switch) => return Ok(crate::Nav::To(crate::Screen::Sandbox)),
-                Some(Command::Game(action)) => app.update(action),
-                None => {}
-            }
+impl GameScreen {
+    pub fn new() -> Self {
+        Self {
+            app: App::new(),
+            fireworks: VictoryFireworks::new(VICTORY_SEED),
+            last_body: None,
         }
+    }
 
+    pub fn handle_key(&mut self, code: KeyCode) -> Option<crate::Nav> {
+        match map_key(code) {
+            Some(Command::Quit) => return Some(crate::Nav::To(crate::Screen::Menu)),
+            Some(Command::Switch) => return Some(crate::Nav::To(crate::Screen::Sandbox)),
+            Some(Command::Game(action)) => self.app.update(action),
+            None => {}
+        }
+        None
+    }
+
+    pub fn render(&mut self, frame: &mut Frame) -> Rect {
+        let body = render::ui(frame, &self.app, self.fireworks.particles());
+        self.last_body = Some(body);
+        body
+    }
+
+    pub fn tick(&mut self, dt: Duration) {
         // The celebration runs only after the win, animating behind the modal.
-        if app.won()
-            && let Some(body) = body
+        if self.app.won()
+            && let Some(body) = self.last_body
         {
-            fireworks.tick(dt, body);
+            self.fireworks.tick(dt, body);
         }
-
-        app.tick(dt);
+        self.app.tick(dt);
     }
 }
 

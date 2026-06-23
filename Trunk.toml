@@ -1,0 +1,9 @@
+[build]
+target = "index.html"
+# Relative asset URLs so the bundle works both at the local dev root and under
+# the GitHub Pages project subpath (https://<user>.github.io/<repo>/).
+public_url = "./"
+
+[serve]
+address = "127.0.0.1"
+port = 8080

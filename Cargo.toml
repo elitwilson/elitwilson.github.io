@@ -6,10 +6,25 @@ authors = ["Eli Wilson"]
 license = "MIT"
 edition = "2024"
 
-[dependencies]
+# Native (terminal) target: full ratatui with its default crossterm backend,
+# plus color-eyre for the pretty panic/report hook.
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 color-eyre = "0.6.3"
 crossterm = "0.29.0"
-ratatui = "0.30.0"
+ratatui = "0.30.1"
+
+# Web (WASM) target: ratzilla supplies the browser backend. ratatui is declared
+# separately here with default-features off so the crossterm backend (which does
+# not build for wasm32) is never unified in. Features mirror ratzilla's own pin.
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+ratatui = { version = "0.30.1", default-features = false, features = ["all-widgets", "layout-cache"] }
+ratzilla = "0.3.1"
+web-sys = { version = "0.3", features = ["Window", "Performance"] }
+console_error_panic_hook = "0.1.7"
+# ratzilla's dependency tree uses `critical-section`, which requires the final
+# binary to select an implementation. Enable the std-backed impl (single-threaded
+# wasm is fine) so linking resolves `_critical_section_1_0_acquire/release`.
+critical-section = { version = "1.2", features = ["std"] }
 
 # Read the optimization guideline for more details: https://ratatui.rs/recipes/apps/release-your-app/#optimizations
 [profile.release]
