@@ -1,5 +1,5 @@
 use crate::app::FRAME_TIME;
-use crate::effects::{EffectKind, FireworksParams, spawn};
+use crate::effects::{EffectKind, spawn};
 use crate::particle_render::draw_particles;
 use crate::particles::ParticleSystem;
 use crate::rng::Rng;
@@ -20,19 +20,16 @@ use std::time::{Duration, Instant};
 /// Fixed seed for the sandbox PRNG — reproducible run-to-run.
 const SANDBOX_SEED: u64 = 0xdeadbeef_cafe1234;
 
-/// How often to auto-spawn a fireworks burst. This is the customizable cadence
-/// knob — e.g. `from_secs(2)` for a slow drip, `from_millis(500)` for rapid fire.
-const SPAWN_INTERVAL: Duration = Duration::from_millis(750);
-
 /// All available effect kinds. When STR-002 exposes an ALL const this can be
 /// replaced; for now we define the canonical list locally.
 const EFFECT_KINDS: &[EffectKind] = &[EffectKind::Fireworks];
 
-/// What a keypress resolves to in the sandbox.
+/// What a keypress resolves to in the sandbox (panel closed).
 #[derive(Debug, PartialEq, Eq)]
 pub enum SandboxCommand {
     Quit,
     CycleEffect,
+    ToggleConfig,
     Ignore,
 }
 
@@ -41,7 +38,30 @@ pub fn map_sandbox_key(code: KeyCode) -> SandboxCommand {
     match code {
         KeyCode::Esc | KeyCode::Char('q') => SandboxCommand::Quit,
         KeyCode::Tab => SandboxCommand::CycleEffect,
+        KeyCode::Char('c') => SandboxCommand::ToggleConfig,
         _ => SandboxCommand::Ignore,
+    }
+}
+
+/// What a keypress resolves to while the config panel is open.
+#[derive(Debug, PartialEq, Eq)]
+pub enum ConfigCommand {
+    SelectPrev,
+    SelectNext,
+    Step(i32),
+    Close,
+    Ignore,
+}
+
+/// Pure mapping from a key to a config panel command. No IO — testable seam.
+pub fn map_config_key(code: KeyCode) -> ConfigCommand {
+    match code {
+        KeyCode::Up => ConfigCommand::SelectPrev,
+        KeyCode::Down => ConfigCommand::SelectNext,
+        KeyCode::Left => ConfigCommand::Step(-1),
+        KeyCode::Right => ConfigCommand::Step(1),
+        KeyCode::Char('c') | KeyCode::Esc => ConfigCommand::Close,
+        _ => ConfigCommand::Ignore,
     }
 }
 
@@ -183,10 +203,11 @@ fn field_value(config: &SandboxConfig, field: ConfigField) -> String {
 pub fn sandbox(terminal: &mut DefaultTerminal) -> std::io::Result<()> {
     let mut system = ParticleSystem::new();
     let mut rng = Rng::new(SANDBOX_SEED);
-    let params = FireworksParams::default();
+    let mut config = SandboxConfig::default();
 
     let mut kind_idx: usize = 0;
     let mut spawn_acc = Duration::ZERO;
+    let mut config_open = false;
     let mut last_area: Option<Rect> = None;
     let mut last_mouse: Option<(u16, u16)> = None;
     let mut last = Instant::now();
@@ -214,8 +235,9 @@ pub fn sandbox(terminal: &mut DefaultTerminal) -> std::io::Result<()> {
             let kind_name = match EFFECT_KINDS[kind_idx] {
                 EffectKind::Fireworks => "Fireworks",
             };
+            let panel_hint = if config_open { " c/Esc: close panel " } else { " c: config " };
             let hint = format!(
-                " Sandbox | Effect: {kind_name} | Follows mouse | Tab: cycle | q/Esc: quit "
+                " Sandbox | Effect: {kind_name} | Follows mouse | Tab: cycle | q/Esc: quit |{panel_hint}"
             );
             let title = Paragraph::new(Span::styled(hint, Style::default().fg(Color::Yellow)))
                 .block(Block::default());
@@ -228,6 +250,12 @@ pub fn sandbox(terminal: &mut DefaultTerminal) -> std::io::Result<()> {
             // Draw live particles. Origin (0,0) is the top-left of the body area;
             // particle positions are body-relative because center is computed from body.
             draw_particles(&system, frame.buffer_mut(), body, (body.x, body.y));
+
+            // Overlay the config panel when open — drawn after particles so it
+            // appears on top of the simulation.
+            if config_open {
+                draw_config_panel(frame, &config);
+            }
 
             drawn_body = Some(body);
         })?;
@@ -249,18 +277,34 @@ pub fn sandbox(terminal: &mut DefaultTerminal) -> std::io::Result<()> {
             loop {
                 match event::read()? {
                     Event::Key(key) if key.kind == KeyEventKind::Press => {
-                        match map_sandbox_key(key.code) {
-                            SandboxCommand::Quit => {
-                                execute!(stdout(), DisableMouseCapture)?;
-                                return Ok(());
+                        if config_open {
+                            // Config panel captures all keys while open.
+                            match map_config_key(key.code) {
+                                ConfigCommand::SelectPrev => config.select_prev(),
+                                ConfigCommand::SelectNext => config.select_next(),
+                                ConfigCommand::Step(dir) => {
+                                    let field = config.selected_field();
+                                    step(&mut config, field, dir);
+                                }
+                                ConfigCommand::Close => config_open = false,
+                                ConfigCommand::Ignore => {}
                             }
-                            SandboxCommand::CycleEffect => {
-                                kind_idx = next_kind(kind_idx, EFFECT_KINDS.len());
+                        } else {
+                            match map_sandbox_key(key.code) {
+                                SandboxCommand::Quit => {
+                                    execute!(stdout(), DisableMouseCapture)?;
+                                    return Ok(());
+                                }
+                                SandboxCommand::CycleEffect => {
+                                    kind_idx = next_kind(kind_idx, EFFECT_KINDS.len());
+                                }
+                                SandboxCommand::ToggleConfig => config_open = true,
+                                SandboxCommand::Ignore => {}
                             }
-                            SandboxCommand::Ignore => {}
                         }
                     }
                     // Track the latest cursor cell — bursts spawn here.
+                    // Mouse-follow continues regardless of whether the panel is open.
                     Event::Mouse(me) => last_mouse = Some((me.column, me.row)),
                     _ => {}
                 }
@@ -271,15 +315,16 @@ pub fn sandbox(terminal: &mut DefaultTerminal) -> std::io::Result<()> {
         }
 
         // --- auto-spawn at the mouse (or center until the mouse first moves) ---
+        // Reads live from config so cadence and burst shape update immediately.
         if let Some(area) = last_area {
-            let (count, remainder) = cadence_step(spawn_acc, dt, SPAWN_INTERVAL);
+            let (count, remainder) = cadence_step(spawn_acc, dt, config.spawn_interval);
             spawn_acc = remainder;
             let origin = spawn_origin(area, last_mouse);
             for _ in 0..count {
                 spawn(
                     EFFECT_KINDS[kind_idx],
                     origin,
-                    &params,
+                    &config.params,
                     &mut rng,
                     &mut system,
                 );
@@ -388,6 +433,60 @@ mod tests {
     fn unknown_key_maps_to_ignore() {
         assert_eq!(map_sandbox_key(KeyCode::Char('z')), SandboxCommand::Ignore);
         assert_eq!(map_sandbox_key(KeyCode::Enter), SandboxCommand::Ignore);
+    }
+
+    // --- map_sandbox_key: ToggleConfig ---
+
+    #[test]
+    fn c_maps_to_toggle_config() {
+        assert_eq!(map_sandbox_key(KeyCode::Char('c')), SandboxCommand::ToggleConfig);
+    }
+
+    // --- map_config_key ---
+
+    #[test]
+    fn config_up_maps_to_select_prev() {
+        assert_eq!(map_config_key(KeyCode::Up), ConfigCommand::SelectPrev);
+    }
+
+    #[test]
+    fn config_down_maps_to_select_next() {
+        assert_eq!(map_config_key(KeyCode::Down), ConfigCommand::SelectNext);
+    }
+
+    #[test]
+    fn config_left_maps_to_step_dec() {
+        assert_eq!(map_config_key(KeyCode::Left), ConfigCommand::Step(-1));
+    }
+
+    #[test]
+    fn config_right_maps_to_step_inc() {
+        assert_eq!(map_config_key(KeyCode::Right), ConfigCommand::Step(1));
+    }
+
+    #[test]
+    fn config_c_maps_to_close() {
+        assert_eq!(map_config_key(KeyCode::Char('c')), ConfigCommand::Close);
+    }
+
+    #[test]
+    fn config_esc_maps_to_close() {
+        assert_eq!(map_config_key(KeyCode::Esc), ConfigCommand::Close);
+    }
+
+    #[test]
+    fn config_q_is_inert() {
+        assert_eq!(map_config_key(KeyCode::Char('q')), ConfigCommand::Ignore);
+    }
+
+    #[test]
+    fn config_tab_is_inert() {
+        assert_eq!(map_config_key(KeyCode::Tab), ConfigCommand::Ignore);
+    }
+
+    #[test]
+    fn config_unknown_key_is_inert() {
+        assert_eq!(map_config_key(KeyCode::Enter), ConfigCommand::Ignore);
     }
 
     // --- cadence_step ---
