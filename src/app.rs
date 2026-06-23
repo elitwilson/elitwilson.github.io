@@ -5,6 +5,9 @@ use crate::render;
 use crate::theme::Theme;
 use crossterm::event::{self, Event, KeyCode, KeyEventKind};
 use ratatui::DefaultTerminal;
+use std::time::{Duration, Instant};
+
+const FRAME_TIME: Duration = Duration::from_millis(16);
 
 pub struct App {
     map: Map,
@@ -145,23 +148,35 @@ impl App {
     pub fn show_about(&self) -> bool {
         self.show_about
     }
+
+    /// Per-frame hook called once per loop iteration with the real elapsed
+    /// time since the last frame. No-op today; the seam exists so future
+    /// time-based animation has somewhere to live.
+    pub fn tick(&mut self, _dt: Duration) {}
 }
 
 pub fn app(terminal: &mut DefaultTerminal) -> std::io::Result<()> {
     let mut app = App::new();
+    let mut last = Instant::now();
     loop {
         terminal.draw(|frame| render::ui(frame, &app))?;
 
-        if let Event::Key(key) = event::read()? {
-            if key.kind != KeyEventKind::Press {
-                continue;
-            }
+        let now = Instant::now();
+        let dt = now - last;
+        last = now;
+
+        if event::poll(FRAME_TIME)?
+            && let Event::Key(key) = event::read()?
+            && key.kind == KeyEventKind::Press
+        {
             match map_key(key.code) {
-                Some(Command::Quit) => break Ok(()),
+                Some(Command::Quit) => return Ok(()),
                 Some(Command::Game(action)) => app.update(action),
                 None => {}
             }
         }
+
+        app.tick(dt);
     }
 }
 
