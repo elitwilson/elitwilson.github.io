@@ -203,7 +203,7 @@ fn field_value(config: &SandboxConfig, field: ConfigField) -> String {
 ///
 /// Same signature as `app::app`; the top-level `main::run` driver dispatches
 /// between the two screens based on the returned `ScreenExit`.
-pub fn sandbox(terminal: &mut DefaultTerminal) -> std::io::Result<crate::ScreenExit> {
+pub fn sandbox(terminal: &mut DefaultTerminal) -> std::io::Result<crate::Nav> {
     let mut system = ParticleSystem::new();
     let mut rng = Rng::new(SANDBOX_SEED);
     let mut config = SandboxConfig::default();
@@ -296,11 +296,11 @@ pub fn sandbox(terminal: &mut DefaultTerminal) -> std::io::Result<crate::ScreenE
                             match map_sandbox_key(key.code) {
                                 SandboxCommand::Quit => {
                                     execute!(stdout(), DisableMouseCapture)?;
-                                    return Ok(crate::ScreenExit::Quit);
+                                    return Ok(crate::Nav::To(crate::Screen::Menu));
                                 }
                                 SandboxCommand::Switch => {
                                     execute!(stdout(), DisableMouseCapture)?;
-                                    return Ok(crate::ScreenExit::Switch);
+                                    return Ok(crate::Nav::To(crate::Screen::Game));
                                 }
                                 SandboxCommand::CycleEffect => {
                                     kind_idx = next_kind(kind_idx, EFFECT_KINDS.len());

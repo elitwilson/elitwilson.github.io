@@ -171,7 +171,7 @@ impl App {
     pub fn tick(&mut self, _dt: Duration) {}
 }
 
-pub fn app(terminal: &mut DefaultTerminal) -> std::io::Result<crate::ScreenExit> {
+pub fn app(terminal: &mut DefaultTerminal) -> std::io::Result<crate::Nav> {
     let mut app = App::new();
     let mut fireworks = VictoryFireworks::new(VICTORY_SEED);
     let mut last = Instant::now();
@@ -192,8 +192,8 @@ pub fn app(terminal: &mut DefaultTerminal) -> std::io::Result<crate::ScreenExit>
             && key.kind == KeyEventKind::Press
         {
             match map_key(key.code) {
-                Some(Command::Quit) => return Ok(crate::ScreenExit::Quit),
-                Some(Command::Switch) => return Ok(crate::ScreenExit::Switch),
+                Some(Command::Quit) => return Ok(crate::Nav::To(crate::Screen::Menu)),
+                Some(Command::Switch) => return Ok(crate::Nav::To(crate::Screen::Sandbox)),
                 Some(Command::Game(action)) => app.update(action),
                 None => {}
             }
