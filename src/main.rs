@@ -1,4 +1,5 @@
 mod app;
+mod block_font;
 mod effects;
 mod map;
 mod particle_render;
