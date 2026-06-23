@@ -34,6 +34,14 @@
 
 **Why:** The spec only requires "varied outward motion" and a radial-ish burst. Centering on x-axis is the simplest, symmetric choice. The sandbox (STR-004) can rotate the spawn call if directional control is needed — that's a call-site concern.
 
+## 2026-06-22 (005): fade() semantic is inverted relative to spec
+
+**Context:** Spec 005 says `fade = 1.0` means fresh and `fade → 0` means fully aged. But `Particle::fade()` in `src/particles.rs` returns `0.0` at spawn (remaining == total) and approaches `1.0` as lifetime drains.
+
+**Decision:** Adapt `fade_color` in `src/particle_render.rs` to treat the actual `fade()` value (0.0 = fresh, 1.0 = aged) correctly. The brightness factor used in `fade_color` is `(1.0 - fade)` so that a fresh particle (fade=0.0) gets full brightness and an aged particle (fade→1.0) approaches black.
+
+**Why:** The actual `Particle::fade()` implementation is the ground truth. The spec's description of the fade semantics was written before STR-001 shipped. Adapting `fade_color` at the call site is the minimal change that keeps everything correct.
+
 ## 2026-06-22: Pre-existing test failures noted
 
 **Failing tests on base branch (not caused by this spec):**

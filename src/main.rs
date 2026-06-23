@@ -1,6 +1,7 @@
 mod app;
 mod effects;
 mod map;
+mod particle_render;
 mod particles;
 mod render;
 mod rng;
