@@ -6,10 +6,15 @@
       name="viewport"
       content="width=device-width, initial-scale=1.0, user-scalable=no"
     />
+    <!-- DIAGNOSTIC: Fira Code web font temporarily disabled to test whether the
+         cold-load horizontal scrollbar is caused by the web-font sizing race.
+         Revert this block (and the font-family below) once confirmed. -->
+    <!--
     <link
       rel="stylesheet"
       href="https://cdnjs.cloudflare.com/ajax/libs/firacode/6.2.0/fira_code.min.css"
     />
+    -->
     <title>Charlo</title>
     <style>
       body {
@@ -24,7 +29,8 @@
         background-color: #121212;
       }
       pre {
-        font-family: "Fira Code", monospace;
+        /* DIAGNOSTIC: system monospace only (no web font) — see note above. */
+        font-family: monospace;
         font-size: 16px;
         margin: 0px;
       }
