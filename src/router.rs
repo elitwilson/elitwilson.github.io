@@ -50,7 +50,8 @@ impl Router {
         match &mut self.screen {
             ScreenState::Game(s) => s.tick(dt),
             ScreenState::Sandbox(s) => s.tick(dt),
-            ScreenState::Menu(_) | ScreenState::About(_) => {}
+            ScreenState::About(s) => s.tick(dt),
+            ScreenState::Menu(_) => {}
         }
     }
 
@@ -77,7 +78,7 @@ impl Router {
         self.screen = match screen {
             Screen::Menu => ScreenState::Menu(Menu::new()),
             Screen::Game => ScreenState::Game(GameScreen::new()),
-            Screen::About => ScreenState::About(About),
+            Screen::About => ScreenState::About(About::new()),
             Screen::Sandbox => ScreenState::Sandbox(SandboxScreen::new()),
         };
     }
