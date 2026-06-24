@@ -21,7 +21,8 @@ open = "5"
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 ratatui = { version = "0.30.1", default-features = false, features = ["all-widgets", "layout-cache"] }
 ratzilla = "0.3.1"
-web-sys = { version = "0.3", features = ["Window", "Performance"] }
+web-sys = { version = "0.3", features = ["Window", "Performance", "Document", "FontFaceSet"] }
+wasm-bindgen-futures = "0.4"
 console_error_panic_hook = "0.1.7"
 # ratzilla's dependency tree uses `critical-section`, which requires the final
 # binary to select an implementation. Enable the std-backed impl (single-threaded

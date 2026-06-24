@@ -20,38 +20,69 @@ pub fn run() -> std::io::Result<()> {
     // Route Rust panics to the browser console with a readable stack trace.
     std::panic::set_hook(Box::new(console_error_panic_hook::hook));
 
-    let backend = DomBackend::new()?;
-    let mut terminal = Terminal::new(backend)?;
+    // `DomBackend` sizes the terminal grid from the *measured* width of a
+    // character cell. If we build it before the Fira Code web font has loaded,
+    // that measurement uses the fallback `monospace` font; once Fira Code swaps
+    // in, the now-wrong grid overflows the viewport (the cold-load horizontal
+    // scrollbar). Awaiting `document.fonts.ready` first guarantees the real font
+    // is in place before the first measurement. On a warm cache it resolves
+    // immediately, so refreshes are unaffected.
+    wasm_bindgen_futures::spawn_local(async {
+        wait_for_fonts().await;
+        start();
+    });
+
+    Ok(())
+}
+
+/// Resolve once the document's fonts have finished loading. Any missing window /
+/// document (e.g. a non-browser host) is treated as "nothing to wait for".
+async fn wait_for_fonts() {
+    let Some(document) = web_sys::window().and_then(|w| w.document()) else {
+        return;
+    };
+    if let Ok(ready) = document.fonts().ready() {
+        let _ = wasm_bindgen_futures::JsFuture::from(ready).await;
+    }
+}
+
+fn start() {
+    let backend = DomBackend::new().expect("failed to create DOM backend");
+    let mut terminal = Terminal::new(backend).expect("failed to create terminal");
 
     // Shared across the key, mouse, and draw callbacks. Single-threaded in the
     // browser, and the callbacks never run reentrantly, so the borrows never
     // overlap.
     let router = Rc::new(RefCell::new(Router::new()));
 
-    terminal.on_key_event({
-        let router = router.clone();
-        move |key_event| {
-            let mut router = router.borrow_mut();
-            if let Some(nav) = router.handle_key(key_event.code) {
-                match nav {
-                    // No process to quit on the web — fall back to the menu.
-                    Nav::Quit => router.goto(Screen::Menu),
-                    Nav::To(screen) => router.goto(screen),
-                    // Open the link in a new tab; stay on the current screen.
-                    Nav::OpenUrl(url) => open_in_new_tab(url),
+    terminal
+        .on_key_event({
+            let router = router.clone();
+            move |key_event| {
+                let mut router = router.borrow_mut();
+                if let Some(nav) = router.handle_key(key_event.code) {
+                    match nav {
+                        // No process to quit on the web — fall back to the menu.
+                        Nav::Quit => router.goto(Screen::Menu),
+                        Nav::To(screen) => router.goto(screen),
+                        // Open the link in a new tab; stay on the current screen.
+                        Nav::OpenUrl(url) => open_in_new_tab(url),
+                    }
                 }
             }
-        }
-    })?;
+        })
+        .expect("failed to register key handler");
 
-    terminal.on_mouse_event({
-        let router = router.clone();
-        move |mouse_event| {
-            router
-                .borrow_mut()
-                .set_mouse((mouse_event.col, mouse_event.row));
-        }
-    })?;
+    terminal
+        .on_mouse_event({
+            let router = router.clone();
+            move |mouse_event| {
+                router
+                    .borrow_mut()
+                    .set_mouse((mouse_event.col, mouse_event.row));
+            }
+        })
+        .expect("failed to register mouse handler");
 
     let mut last = now_ms();
     terminal.draw_web(move |frame| {
@@ -64,8 +95,6 @@ pub fn run() -> std::io::Result<()> {
         router.render(frame);
         router.tick(dt);
     });
-
-    Ok(())
 }
 
 /// Open a URL in a new browser tab. A blocked popup or missing window is

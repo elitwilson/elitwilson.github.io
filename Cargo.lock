@@ -1265,6 +1265,7 @@ dependencies = [
  "open",
  "ratatui",
  "ratzilla",
+ "wasm-bindgen-futures",
  "web-sys",
 ]
 
