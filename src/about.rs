@@ -47,6 +47,12 @@ fn render_panel(frame: &mut Frame, area: Rect, title: &str) -> Rect {
     }
 }
 
+fn skill_bar(n: u8) -> String {
+    let filled = n.min(10) as usize;
+    let empty = 10usize.saturating_sub(filled);
+    "█".repeat(filled) + &"░".repeat(empty)
+}
+
 /// The About screen carries no state — it's a static page until a key sends it
 /// back to the menu. A unit struct keeps it uniform with the other screens so
 /// the router can drive all four the same way.
@@ -156,12 +162,39 @@ impl About {
         ];
         frame.render_widget(Paragraph::new(bio_lines), profile_body);
 
-        // --- SKILLS / CAREER placeholder ---
-        frame.render_widget(
-            Paragraph::new("[ SKILLS / CAREER ]")
-                .style(Style::default().fg(SECONDARY_BLUE).bg(INDIGO_BG)),
-            rows[8],
-        );
+        // --- Two-column SKILLS.SYS + CAREER.LOG ---
+        let two_col = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+            .split(rows[8]);
+
+        let skills_body = render_panel(frame, two_col[0], "SKILLS.SYS");
+        let panel_style = Style::default().fg(PANEL_TEXT).bg(INDIGO_BG);
+        let skill_entries: &[(&str, u8)] = &[
+            ("Rust", 9),
+            ("TypeScript", 8),
+            ("Systems Design", 7),
+            ("TUI / Terminal", 8),
+            ("Web / APIs", 7),
+        ];
+        let skill_lines: Vec<Line> = skill_entries
+            .iter()
+            .map(|(name, n)| {
+                Line::styled(
+                    format!("{} {} {}/10", skill_bar(*n), name, n),
+                    panel_style,
+                )
+            })
+            .collect();
+        frame.render_widget(Paragraph::new(skill_lines), skills_body);
+
+        let career_body = render_panel(frame, two_col[1], "CAREER.LOG");
+        let career_lines = vec![
+            Line::styled("2022–NOW  · Staff Engineer  · Acme Corp", panel_style),
+            Line::styled("2019–2022 · Senior Engineer · Widgets Inc", panel_style),
+            Line::styled("2016–2019 · Engineer        · StartupCo", panel_style),
+        ];
+        frame.render_widget(Paragraph::new(career_lines), career_body);
 
         // --- Footer hint row ---
         frame.render_widget(
