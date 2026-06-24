@@ -1,9 +1,9 @@
 use crate::input::KeyCode;
 use ratatui::Frame;
-use ratatui::layout::{Alignment, Constraint, Direction, Layout};
+use ratatui::layout::{Alignment, Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Paragraph};
+use ratatui::widgets::{Block, Borders, Paragraph};
 
 const INDIGO_BG: Color = Color::Rgb(30, 27, 75);
 const BRIGHT_GREEN: Color = Color::Rgb(61, 224, 53);
@@ -21,6 +21,29 @@ pub fn map_about_key(code: KeyCode) -> AboutCommand {
     match code {
         KeyCode::Esc | KeyCode::Char('q') => AboutCommand::Back,
         _ => AboutCommand::Ignore,
+    }
+}
+
+/// Renders a bright-green bordered panel with an inverted header bar.
+/// Returns the body rect (inner area below the header row) for content.
+fn render_panel(frame: &mut Frame, area: Rect, title: &str) -> Rect {
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(BRIGHT_GREEN).bg(INDIGO_BG));
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+
+    let header_row = Rect { height: 1, ..inner };
+    frame.render_widget(
+        Paragraph::new(title)
+            .style(Style::default().fg(INDIGO_BG).bg(BRIGHT_GREEN)),
+        header_row,
+    );
+
+    Rect {
+        y: inner.y + 1,
+        height: inner.height.saturating_sub(1),
+        ..inner
     }
 }
 
@@ -113,17 +136,25 @@ impl About {
                 Style::default().fg(SECONDARY_BLUE).bg(INDIGO_BG),
             ),
         ];
-        frame.render_widget(
-            Paragraph::new(title_lines),
-            rows[4],
-        );
+        frame.render_widget(Paragraph::new(title_lines), rows[4]);
 
-        // --- PROFILE.TXT placeholder ---
-        frame.render_widget(
-            Paragraph::new("[ PROFILE.TXT ]")
-                .style(Style::default().fg(PANEL_TEXT).bg(INDIGO_BG)),
-            rows[6],
-        );
+        // --- PROFILE.TXT panel ---
+        let profile_body = render_panel(frame, rows[6], "PROFILE.TXT");
+        let bio_lines = vec![
+            Line::styled(
+                "Eli Wilson is a software developer based in Austin, TX.",
+                Style::default().fg(PANEL_TEXT).bg(INDIGO_BG),
+            ),
+            Line::styled(
+                "Loves building things that blend craft and engineering.",
+                Style::default().fg(PANEL_TEXT).bg(INDIGO_BG),
+            ),
+            Line::styled(
+                "Currently building with Rust, TypeScript, and friends.",
+                Style::default().fg(PANEL_TEXT).bg(INDIGO_BG),
+            ),
+        ];
+        frame.render_widget(Paragraph::new(bio_lines), profile_body);
 
         // --- SKILLS / CAREER placeholder ---
         frame.render_widget(
