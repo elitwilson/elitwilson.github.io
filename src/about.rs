@@ -52,8 +52,7 @@ fn render_panel(frame: &mut Frame, area: Rect, title: &str) -> Rect {
 
     let header_row = Rect { height: 1, ..inner };
     frame.render_widget(
-        Paragraph::new(title)
-            .style(Style::default().fg(INDIGO_BG).bg(BRIGHT_GREEN)),
+        Paragraph::new(title).style(Style::default().fg(INDIGO_BG).bg(BRIGHT_GREEN)),
         header_row,
     );
 
@@ -82,7 +81,10 @@ fn capability_line(name: &str, width: u16) -> Line<'static> {
     let used = name.chars().count() + status.chars().count() + 2; // spaces flanking the dots
     let dots = (width as usize).saturating_sub(used).max(1);
     Line::from(vec![
-        Span::styled(name.to_string(), Style::default().fg(PANEL_TEXT).bg(INDIGO_BG)),
+        Span::styled(
+            name.to_string(),
+            Style::default().fg(PANEL_TEXT).bg(INDIGO_BG),
+        ),
         Span::styled(
             format!(" {} ", ".".repeat(dots)),
             Style::default().fg(DIM_GREEN).bg(INDIGO_BG),
@@ -304,10 +306,7 @@ impl About {
 
         // Paint gap and spacer rows with indigo bg
         for &gap in &[rows[1], rows[3], rows[5], rows[7], rows[9]] {
-            frame.render_widget(
-                Block::default().style(Style::default().bg(INDIGO_BG)),
-                gap,
-            );
+            frame.render_widget(Block::default().style(Style::default().bg(INDIGO_BG)), gap);
         }
 
         area
@@ -346,7 +345,10 @@ mod tests {
         let elapsed = Duration::from_millis(BOOT_CHAR_MS as u64 * 25);
         let lines = boot_lines(elapsed);
         assert_eq!(lines.len(), 2, "only the typed-so-far lines should appear");
-        assert_eq!(line_text(&lines[0]).trim_end_matches(['█', ' ']), BOOT_LOG[0]);
+        assert_eq!(
+            line_text(&lines[0]).trim_end_matches(['█', ' ']),
+            BOOT_LOG[0]
+        );
         assert!(line_text(&lines[1]).starts_with("> LOA"));
     }
 
@@ -360,7 +362,11 @@ mod tests {
     #[test]
     fn cursor_blinks_on_and_off() {
         assert!(cursor_visible(Duration::ZERO));
-        assert!(!cursor_visible(Duration::from_millis(CURSOR_BLINK_MS as u64)));
-        assert!(cursor_visible(Duration::from_millis(CURSOR_BLINK_MS as u64 * 2)));
+        assert!(!cursor_visible(Duration::from_millis(
+            CURSOR_BLINK_MS as u64
+        )));
+        assert!(cursor_visible(Duration::from_millis(
+            CURSOR_BLINK_MS as u64 * 2
+        )));
     }
 }
