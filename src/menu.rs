@@ -10,19 +10,29 @@ use crate::block_font;
 const TITLE_FG: Color = Color::Rgb(0, 255, 0);
 const TITLE_SHADOW: Color = Color::Rgb(0, 80, 0);
 
+/// External link opened by the GitHub menu item.
+const GITHUB_URL: &str = "https://github.com/elitwilson";
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MenuItem {
     Play,
+    GitHub,
     About,
     Quit,
 }
 
-pub(crate) const ITEMS: &[MenuItem] = &[MenuItem::Play, MenuItem::About, MenuItem::Quit];
+pub(crate) const ITEMS: &[MenuItem] = &[
+    MenuItem::Play,
+    MenuItem::GitHub,
+    MenuItem::About,
+    MenuItem::Quit,
+];
 
 impl MenuItem {
     fn label(self) -> &'static str {
         match self {
             MenuItem::Play => "Play",
+            MenuItem::GitHub => "GitHub",
             MenuItem::About => "About",
             MenuItem::Quit => "Quit",
         }
@@ -77,19 +87,45 @@ impl Menu {
 pub fn activate(item: MenuItem) -> crate::Nav {
     match item {
         MenuItem::Play => crate::Nav::To(crate::Screen::Game),
+        MenuItem::GitHub => crate::Nav::OpenUrl(GITHUB_URL),
         MenuItem::About => crate::Nav::To(crate::Screen::About),
         MenuItem::Quit => crate::Nav::Quit,
     }
 }
 
+/// Draw one block-font line, horizontally centered within `area`, with the
+/// title colors and drop shadow.
+fn draw_centered_banner(frame: &mut Frame, area: Rect, text: &str) {
+    let lines = block_font::compose(text, 1);
+    let banner_w = lines[0].chars().count() as u16;
+    let banner_x = area.x + area.width.saturating_sub(banner_w) / 2;
+    block_font::draw_banner(
+        frame.buffer_mut(),
+        (banner_x, area.y),
+        &lines,
+        TITLE_FG,
+        TITLE_SHADOW,
+    );
+}
+
 fn render_menu(frame: &mut Frame, menu: &Menu) {
     let area = frame.area();
 
-    // Banner: HEIGHT rows + 1 shadow row + 1 padding below
-    let banner_h = (block_font::HEIGHT + 2) as u16;
+    // Each block-font line occupies HEIGHT rows (glyph rows + the drop shadow,
+    // which falls into the blank padding row that `compose` already includes).
+    let banner_h = block_font::HEIGHT as u16;
     let item_h = ITEMS.len() as u16;
-    let footer_h = 1u16;
-    let total_content = banner_h + item_h + 1 + footer_h; // +1 gap between items/footer
+
+    // Two stacked name lines, a smaller subtitle, the menu items, and the footer
+    // — with single-row gaps separating the groups.
+    let total_content = banner_h    // ELI
+        + banner_h                  // WILSON
+        + 1                         // gap
+        + 1                         // subtitle
+        + 1                         // gap
+        + item_h                    // menu items
+        + 1                         // gap
+        + 1; // footer
 
     let top_pad = area.height.saturating_sub(total_content) / 2;
 
@@ -97,28 +133,35 @@ fn render_menu(frame: &mut Frame, menu: &Menu) {
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Length(top_pad),
-            Constraint::Length(banner_h),
-            Constraint::Length(item_h),
-            Constraint::Length(1),
-            Constraint::Length(footer_h),
+            Constraint::Length(banner_h), // 1: ELI
+            Constraint::Length(banner_h), // 2: WILSON
+            Constraint::Length(1),        // 3: gap
+            Constraint::Length(1),        // 4: subtitle
+            Constraint::Length(1),        // 5: gap
+            Constraint::Length(item_h),   // 6: items
+            Constraint::Length(1),        // 7: gap
+            Constraint::Length(1),        // 8: footer
             Constraint::Min(0),
         ])
         .split(area);
 
-    let banner_area = chunks[1];
-    let items_area = chunks[2];
-    let footer_area = chunks[4];
+    let items_area = chunks[6];
+    let footer_area = chunks[8];
 
-    // Title banner — horizontally centered
-    let lines = block_font::compose("CHARLO", 1);
-    let banner_w = lines[0].chars().count() as u16;
-    let banner_x = banner_area.x + banner_area.width.saturating_sub(banner_w) / 2;
-    block_font::draw_banner(
-        frame.buffer_mut(),
-        (banner_x, banner_area.y),
-        &lines,
-        TITLE_FG,
-        TITLE_SHADOW,
+    // Name in big block letters with a drop shadow, each line horizontally
+    // centered in its row. The font is uppercase-only, so it reads as all-caps.
+    draw_centered_banner(frame, chunks[1], "ELI");
+    draw_centered_banner(frame, chunks[2], "WILSON");
+
+    // Smaller subtitle under the name, in normal terminal-size text.
+    frame.render_widget(
+        Paragraph::new(Line::from(Span::styled(
+            "Software Developer",
+            Style::default().fg(Color::Rgb(0, 200, 0)),
+        )))
+        .alignment(Alignment::Center)
+        .block(Block::default()),
+        chunks[4],
     );
 
     // Item list
@@ -280,6 +323,11 @@ mod tests {
             activate(MenuItem::About),
             crate::Nav::To(crate::Screen::About)
         );
+    }
+
+    #[test]
+    fn activate_github_opens_the_link() {
+        assert_eq!(activate(MenuItem::GitHub), crate::Nav::OpenUrl(GITHUB_URL));
     }
 
     #[test]

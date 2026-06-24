@@ -29,6 +29,9 @@ pub(crate) enum Screen {
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum Nav {
     To(Screen),
+    /// Open an external URL (e.g. the GitHub link). Each runner handles this in
+    /// a target-appropriate way and stays on the current screen.
+    OpenUrl(&'static str),
     Quit,
 }
 
@@ -92,6 +95,11 @@ fn native_run(terminal: &mut ratatui::DefaultTerminal) -> std::io::Result<()> {
             match nav {
                 Nav::Quit => break Ok(()),
                 Nav::To(screen) => router.goto(screen),
+                // Launch the OS browser; stay on the current screen. A failure
+                // to open (no browser, headless) is non-fatal — just ignore it.
+                Nav::OpenUrl(url) => {
+                    let _ = open::that(url);
+                }
             }
         }
 

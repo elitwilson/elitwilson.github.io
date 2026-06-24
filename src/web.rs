@@ -37,6 +37,8 @@ pub fn run() -> std::io::Result<()> {
                     // No process to quit on the web — fall back to the menu.
                     Nav::Quit => router.goto(Screen::Menu),
                     Nav::To(screen) => router.goto(screen),
+                    // Open the link in a new tab; stay on the current screen.
+                    Nav::OpenUrl(url) => open_in_new_tab(url),
                 }
             }
         }
@@ -64,6 +66,14 @@ pub fn run() -> std::io::Result<()> {
     });
 
     Ok(())
+}
+
+/// Open a URL in a new browser tab. A blocked popup or missing window is
+/// non-fatal — there's nothing useful to do but ignore it.
+fn open_in_new_tab(url: &str) {
+    if let Some(window) = web_sys::window() {
+        let _ = window.open_with_url_and_target(url, "_blank");
+    }
 }
 
 /// Milliseconds from a monotonic high-resolution clock.

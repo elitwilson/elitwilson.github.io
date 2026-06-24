@@ -12,6 +12,8 @@ edition = "2024"
 color-eyre = "0.6.3"
 crossterm = "0.29.0"
 ratatui = "0.30.1"
+# Open the GitHub menu link in the OS default browser (cross-platform).
+open = "5"
 
 # Web (WASM) target: ratzilla supplies the browser backend. ratatui is declared
 # separately here with default-features off so the crossterm backend (which does
