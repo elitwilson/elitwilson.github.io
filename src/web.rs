@@ -84,6 +84,13 @@ fn start() {
         })
         .expect("failed to register mouse handler");
 
+    // ratzilla attaches its `keydown` listener to the grid element and makes it
+    // focusable with `tabindex="0"`. On a fresh load nothing focuses that element,
+    // so the menu stays unresponsive until the user clicks the page. Focus it now
+    // (handlers are registered, so the tabindex is already set) to make the menu
+    // navigable immediately on refresh.
+    focus_grid();
+
     let mut last = now_ms();
     terminal.draw_web(move |frame| {
         let now = now_ms();
@@ -95,6 +102,21 @@ fn start() {
         router.render(frame);
         router.tick(dt);
     });
+}
+
+/// Give keyboard focus to ratzilla's grid element (default id `grid`) so key
+/// events flow without an initial click. A missing element or non-`HtmlElement`
+/// is non-fatal — there's nothing useful to do but ignore it.
+fn focus_grid() {
+    use web_sys::wasm_bindgen::JsCast;
+    if let Some(element) = web_sys::window()
+        .and_then(|w| w.document())
+        .and_then(|d| d.get_element_by_id("grid"))
+    {
+        if let Ok(html) = element.dyn_into::<web_sys::HtmlElement>() {
+            let _ = html.focus();
+        }
+    }
 }
 
 /// Open a URL in a new browser tab. A blocked popup or missing window is
