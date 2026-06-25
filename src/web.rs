@@ -84,14 +84,14 @@ fn start() {
         })
         .expect("failed to register mouse handler");
 
-    // ratzilla attaches its `keydown` listener to the grid element and makes it
-    // focusable with `tabindex="0"`. On a fresh load nothing focuses that element,
-    // so the menu stays unresponsive until the user clicks the page. Focus it now
-    // (handlers are registered, so the tabindex is already set) to make the menu
-    // navigable immediately on refresh.
-    focus_grid();
-
     let mut last = now_ms();
+    // ratzilla attaches its `keydown` listener to the grid element and makes it
+    // focusable with `tabindex="0"`, but only appends that element to the DOM
+    // during the first render frame. On a fresh load nothing focuses it, so the
+    // menu stays unresponsive until the user clicks. We can't focus it before the
+    // loop starts (it isn't in the DOM yet), so retry each frame until focus takes
+    // — it lands on the first frame where the grid exists, then stops.
+    let mut focused = false;
     terminal.draw_web(move |frame| {
         let now = now_ms();
         // Clamp against clock anomalies so a bad sample can't rewind animation.
@@ -101,22 +101,30 @@ fn start() {
         let mut router = router.borrow_mut();
         router.render(frame);
         router.tick(dt);
+
+        if !focused {
+            focused = focus_grid();
+        }
     });
 }
 
 /// Give keyboard focus to ratzilla's grid element (default id `grid`) so key
-/// events flow without an initial click. A missing element or non-`HtmlElement`
-/// is non-fatal — there's nothing useful to do but ignore it.
-fn focus_grid() {
+/// events flow without an initial click. Returns `true` once the element exists
+/// and focus was issued; `false` if the grid isn't in the DOM yet (so the caller
+/// can retry on a later frame). A non-`HtmlElement` match is treated as success
+/// to avoid spinning forever.
+fn focus_grid() -> bool {
     use web_sys::wasm_bindgen::JsCast;
-    if let Some(element) = web_sys::window()
+    let Some(element) = web_sys::window()
         .and_then(|w| w.document())
         .and_then(|d| d.get_element_by_id("grid"))
-    {
-        if let Ok(html) = element.dyn_into::<web_sys::HtmlElement>() {
-            let _ = html.focus();
-        }
+    else {
+        return false;
+    };
+    if let Ok(html) = element.dyn_into::<web_sys::HtmlElement>() {
+        let _ = html.focus();
     }
+    true
 }
 
 /// Open a URL in a new browser tab. A blocked popup or missing window is
